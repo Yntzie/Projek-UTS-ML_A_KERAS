@@ -1,5 +1,5 @@
 # ============================================================
-# 🌊 Streamlit: Prediksi Tsunami (RF vs Gradient Boosting)
+# 🌊 Streamlit: Prediksi Tsunami — RF vs Gradient Boosting
 # ============================================================
 import streamlit as st
 import numpy as np
@@ -7,119 +7,136 @@ import pandas as pd
 import pickle
 import matplotlib.pyplot as plt
 
+# ---------------------------- UI Dasar ----------------------------
 st.set_page_config(page_title="Prediksi Tsunami", page_icon="🌊", layout="wide")
 st.title("🌊 Prediksi Potensi Tsunami — Random Forest vs Gradient Boosting")
 st.markdown("""
-Aplikasi ini memuat **model terbaik** hasil GridSearchCV dan memungkinkan kamu:
-- Memilih **Random Forest** atau **Gradient Boosting**
-- Atau **membandingkan** hasil keduanya sekaligus  
-Input yang digunakan adalah **8 fitur terpilih** hasil seleksi fitur.
-
-> Pastikan file model ini ada di folder yang sama:
-> - `BestModel_RandomForest_KelompokTsunami.pkl`
-> - `BestModel_CLF_GradientBoosting_KelompokTsunami.pkl`
+Aplikasi ini memuat **dua model terbaik** hasil GridSearchCV dan membandingkan hasil prediksi:
+- 🌲 **Random Forest** → `BestModel_CLF_RandomForest_KERAS.pkl`  
+- 🚀 **Gradient Boosting** → `BestModel_CLF_GradientBoosting_KERAS.pkl`
 """)
 
-# ------------------------------------------------------------
-# 🔧 Muat model
-# ------------------------------------------------------------
+# ---------------------------- Load Model ----------------------------
+@st.cache_resource
+def load_model(path: str):
+    with open(path, "rb") as f:
+        return pickle.load(f)
 
-with open("model/BestModel_CLF_RandomForest_KERAS.pkl", "rb") as f:
-  model = pickle.load(f)
+try:
+    model_rf = load_model("model/BestModel_CLF_RandomForest_KERAS.pkl")
+except Exception as e:
+    st.error(f"Gagal memuat model Random Forest: {e}")
+    st.stop()
 
-# ------------------------------------------------------------
-# 🧬 Fitur terpilih (urutan harus sama dengan training)
-# ------------------------------------------------------------
-FEATURES = ['cdi','mmi','sig','nst','dmin','gap','latitude','longitude']
+try:
+    model_gbc = load_model("model/BestModel_CLF_GradientBoosting_KERAS.pkl")
+except Exception as e:
+    st.error(f"Gagal memuat model Gradient Boosting: {e}")
+    st.stop()
 
-# ------------------------------------------------------------
-# 📝 Input pengguna (mirip contoh yang kamu pakai)
-# ------------------------------------------------------------
-st.subheader("Masukkan Nilai Fitur (8 Fitur Terbaik)")
-col1, col2 = st.columns(2)
+# === daftar fitur ===
+FEATURES_FULL = ['magnitude','cdi','mmi','sig','nst','dmin','gap','depth','latitude','longitude']
+FEATURES_BEST = ['cdi','mmi','sig','nst','dmin','gap','latitude','longitude']
 
-with col1:
-    cdi = st.number_input("CDI (0–12)", min_value=0.0, max_value=12.0, step=0.1, value=3.0,
-                          help="Community Determined Intensity")
-    mmi = st.number_input("MMI (0–12)", min_value=0.0, max_value=12.0, step=0.1, value=3.0,
-                          help="Modified Mercalli Intensity")
-    sig = st.number_input("SIG (≥0)", min_value=0.0, step=1.0, value=100.0,
-                          help="Significance index")
-    nst = st.number_input("NST (≥0)", min_value=0, step=1, value=10,
-                          help="Jumlah stasiun yang merekam")
+DEFAULTS_FOR_MISSING = {
+    'magnitude': 6.8,
+    'depth': 26.295
+}
 
-with col2:
-    dmin = st.number_input("DMIN", min_value=0.0, step=0.01, value=0.5,
-                          help="Jarak minimum stasiun–episenter")
-    gap = st.number_input("GAP (0–360)", min_value=0.0, max_value=360.0, step=1.0, value=120.0,
-                          help="Sudut gap maksimum antar stasiun")
-    latitude = st.number_input("Latitude (-90–90)", min_value=-90.0, max_value=90.0, step=0.01, value=0.0)
-    longitude = st.number_input("Longitude (-180–180)", min_value=-180.0, max_value=180.0, step=0.01, value=120.0)
+# ---------------------------- Form Input ----------------------------
+st.subheader("Masukkan Nilai Fitur (Urutan Sama dengan Training)")
 
-X_input = pd.DataFrame([{
+c1, c2 = st.columns(2)
+with c1:
+    cdi = st.number_input("CDI (0–12)", 0.0, 12.0, 3.0, 0.1)
+    mmi = st.number_input("MMI (0–12)", 0.0, 12.0, 3.0, 0.1)
+    sig = st.number_input("SIG (≥0)", 0.0, step=1.0, value=100.0)
+    nst = st.number_input("NST (≥0)", 0, step=1, value=10)
+with c2:
+    dmin = st.number_input("DMIN", 0.0, step=0.01, value=0.5)
+    gap = st.number_input("GAP (0–360)", 0.0, 360.0, 120.0, 1.0)
+    latitude = st.number_input("Latitude (-90–90)", -90.0, 90.0, 0.0, 0.01)
+    longitude = st.number_input("Longitude (-180–180)", -180.0, 180.0, 120.0, 0.01)
+
+row_best = {
     'cdi': cdi, 'mmi': mmi, 'sig': sig, 'nst': nst,
     'dmin': dmin, 'gap': gap, 'latitude': latitude, 'longitude': longitude
-}], columns=FEATURES)
+}
 
-# ------------------------------------------------------------
-# ⚙️ Pilih mode: satu model atau bandingkan
-# ------------------------------------------------------------
+row_full = {}
+for col in FEATURES_FULL:
+    if col in row_best:
+        row_full[col] = float(row_best[col])
+    else:
+        # kolom yang tidak diminta user (magnitude, depth) diisi default
+        row_full[col] = float(DEFAULTS_FOR_MISSING.get(col, 0.0))
+
+X_input = pd.DataFrame([row_full], columns=FEATURES_FULL)
+
+
+# ---------------------------- Mode ----------------------------
 mode = st.radio(
     "Pilih Mode",
-    ["Random Forest saja"],
+    ["Random Forest saja", "Gradient Boosting saja", "Bandingkan keduanya"],
     horizontal=True
 )
 
-# ------------------------------------------------------------
-# 🔮 Util prediksi
-# ------------------------------------------------------------
+# ---------------------------- Util Prediksi ----------------------------
 def predict_and_plot(model, X, title):
+    # label
     pred = int(model.predict(X)[0])
-    proba = None
+
+    # probabilitas
     if hasattr(model, "predict_proba"):
         proba = model.predict_proba(X)[0]
     else:
-        # fallback (jarang diperlukan untuk RF/GBC)
-        proba = np.array([1-pred, pred], dtype=float)
+        # fallback jika estimator tidak punya predict_proba
+        proba = np.array([1 - pred, pred], dtype=float)
 
-    # Hasil teks
+    # Teks hasil
     if pred == 1:
         st.error(f"**{title} → Prediksi: TSUNAMI (1)**")
     else:
         st.success(f"**{title} → Prediksi: TIDAK (0)**")
 
-    # Bar chart probabilitas (kelas 0 vs 1)
+    # Bar chart probabilitas
     st.markdown("Probabilitas Prediksi")
-    df_proba = pd.DataFrame({"Kelas": ["0 = Tidak", "1 = Tsunami"], "Probabilitas": proba})
+    dfp = pd.DataFrame({"Kelas": ["0 = Tidak", "1 = Tsunami"], "Prob": proba})
 
     fig, ax = plt.subplots(figsize=(4, 2.5))
-    ax.bar(df_proba["Kelas"], df_proba["Probabilitas"], color=["green", "red"], alpha=0.7)
+    ax.bar(dfp["Kelas"], dfp["Prob"], alpha=0.8)
     ax.set_ylim(0, 1)
     ax.set_ylabel("Probabilitas")
     ax.set_title(f"Distribusi Probabilitas — {title}")
-    for i, v in enumerate(df_proba["Probabilitas"]):
+    for i, v in enumerate(dfp["Prob"]):
         ax.text(i, min(v + 0.02, 1.0), f"{v:.2%}", ha="center", fontsize=10, fontweight="bold")
     st.pyplot(fig)
 
     return pred, float(proba[1])
 
-# ------------------------------------------------------------
-# 🔍 Prediksi
-# ------------------------------------------------------------
+# ---------------------------- Eksekusi ----------------------------
 if st.button("🔍 Jalankan Prediksi"):
     st.write("---")
-    if mode == "Random Forest":
-        predict_and_plot(model, X_input, "Random Forest")
+
+    if mode == "Random Forest saja":
+        predict_and_plot(model_rf, X_input, "Random Forest")
+
+    elif mode == "Gradient Boosting saja":
+        predict_and_plot(model_gbc, X_input, "Gradient Boosting")
 
     else:
-        # Bandingkan keduanya
         colA, colB = st.columns(2)
         with colA:
-            pred_rf, p1_rf = predict_and_plot(model, X_input, "Random Forest")
+            pred_rf, p1_rf = predict_and_plot(model_rf, X_input, "Random Forest")
+        with colB:
+            pred_gbc, p1_gbc = predict_and_plot(model_gbc, X_input, "Gradient Boosting")
 
         st.write("---")
         st.subheader("🏁 Ringkasan Perbandingan (Input Ini)")
-        c1 = st.columns(3)
-        c1.metric("Prob(1) — RF", f"{p1_rf:.3f}")
+        m1, m2, m3 = st.columns(3)
+        m1.metric("Prob(1) — RF", f"{p1_rf:.3f}")
+        m2.metric("Prob(1) — GBC", f"{p1_gbc:.3f}")
+        winner = "Random Forest" if p1_rf >= p1_gbc else "Gradient Boosting"
+        m3.metric("Model lebih yakin", winner)
 
-st.caption("Catatan: Struktur UI & alur input meniru pola dari contoh Streamlit yang kamu kirim (judul, load model, number inputs, tombol prediksi, grafik probabilitas).")
+st.caption("Pastikan kedua file model .pkl berada di direktori yang sama dengan file ini. Urutan kolom input sudah disamakan dengan urutan training.")

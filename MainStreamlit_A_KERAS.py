@@ -1,5 +1,5 @@
 # ============================================================
-# 🌊 Streamlit: Prediksi Tsunami — RF vs Gradient Boosting
+# 🌊 Streamlit: Prediksi Tsunami — Random Forest (Model Terbaik)
 # ============================================================
 import streamlit as st
 import numpy as np
@@ -9,11 +9,10 @@ import matplotlib.pyplot as plt
 
 # ---------------------------- UI Dasar ----------------------------
 st.set_page_config(page_title="Prediksi Tsunami", page_icon="🌊", layout="wide")
-st.title("🌊 Prediksi Potensi Tsunami — Random Forest vs Gradient Boosting")
+st.title("🌊 Prediksi Potensi Tsunami — Random Forest")
 st.markdown("""
-Aplikasi ini memuat **dua model terbaik** hasil GridSearchCV dan membandingkan hasil prediksi:
-- 🌲 **Random Forest** → `BestModel_CLF_RandomForest_KERAS.pkl`  
-- 🚀 **Gradient Boosting** → `BestModel_CLF_GradientBoosting_KERAS.pkl`
+Aplikasi ini menggunakan **model terbaik (Random Forest)** hasil GridSearchCV:
+> File model: `BestModel_CLF_RandomForest_KERAS.pkl`
 """)
 
 # ---------------------------- Load Model ----------------------------
@@ -28,13 +27,7 @@ except Exception as e:
     st.error(f"Gagal memuat model Random Forest: {e}")
     st.stop()
 
-try:
-    model_gbc = load_model("model/BestModel_CLF_GradientBoosting_KERAS.pkl")
-except Exception as e:
-    st.error(f"Gagal memuat model Gradient Boosting: {e}")
-    st.stop()
-
-# === daftar fitur ===
+# ---------------------------- Daftar Fitur ----------------------------
 FEATURES_FULL = ['magnitude','cdi','mmi','sig','nst','dmin','gap','depth','latitude','longitude']
 FEATURES_BEST = ['cdi','mmi','sig','nst','dmin','gap','latitude','longitude']
 
@@ -43,8 +36,8 @@ DEFAULTS_FOR_MISSING = {
     'depth': 26.295
 }
 
-# ---------------------------- Form Input ----------------------------
-st.subheader("Masukkan Nilai Fitur (Urutan Sama dengan Training)")
+# ---------------------------- Input Pengguna ----------------------------
+st.subheader("Masukkan Nilai Fitur (8 Fitur Terbaik)")
 
 c1, c2 = st.columns(2)
 with c1:
@@ -63,54 +56,42 @@ row_best = {
     'dmin': dmin, 'gap': gap, 'latitude': latitude, 'longitude': longitude
 }
 
+# kolom lengkap sesuai training (2 kolom sisanya diisi default)
 row_full = {}
 for col in FEATURES_FULL:
     if col in row_best:
         row_full[col] = float(row_best[col])
     else:
-        # kolom yang tidak diminta user (magnitude, depth) diisi default
         row_full[col] = float(DEFAULTS_FOR_MISSING.get(col, 0.0))
 
 X_input = pd.DataFrame([row_full], columns=FEATURES_FULL)
 
-
-# ---------------------------- Mode ----------------------------
-mode = st.radio(
-    "Pilih Mode",
-    ["Random Forest saja", "Gradient Boosting saja", "Bandingkan keduanya"],
-    horizontal=True
-)
-
-# ---------------------------- Util Prediksi ----------------------------
+# ---------------------------- Prediksi ----------------------------
 def predict_and_plot(model, X, title):
-    # label
     pred = int(model.predict(X)[0])
 
-    # probabilitas
     if hasattr(model, "predict_proba"):
         proba = model.predict_proba(X)[0]
     else:
-        # fallback jika estimator tidak punya predict_proba
         proba = np.array([1 - pred, pred], dtype=float)
 
-    # Teks hasil
+    # === Tampilkan hasil prediksi (success/error) ===
     if pred == 1:
         st.error(f"**{title} → Prediksi: TSUNAMI (1)**")
     else:
         st.success(f"**{title} → Prediksi: TIDAK (0)**")
 
-    # Bar chart probabilitas
-    st.markdown("Probabilitas Prediksi")
+    # === Visualisasi probabilitas ===
     dfp = pd.DataFrame({"Kelas": ["0 = Tidak", "1 = Tsunami"], "Prob": proba})
-
-    fig, ax = plt.subplots(figsize=(4, 2.5))
-    ax.bar(dfp["Kelas"], dfp["Prob"], alpha=0.8)
+    fig, ax = plt.subplots(figsize=(2.8, 1.8))
+    ax.bar(dfp["Kelas"], dfp["Prob"], color=["green", "red"], alpha=0.8)
     ax.set_ylim(0, 1)
-    ax.set_ylabel("Probabilitas")
-    ax.set_title(f"Distribusi Probabilitas — {title}")
+    ax.set_ylabel("Prob", fontsize=8)
+    ax.set_title("Probabilitas", fontsize=9)
     for i, v in enumerate(dfp["Prob"]):
-        ax.text(i, min(v + 0.02, 1.0), f"{v:.2%}", ha="center", fontsize=10, fontweight="bold")
-    st.pyplot(fig)
+        ax.text(i, min(v + 0.03, 1.0), f"{v:.2%}", ha="center", fontsize=8)
+    plt.tight_layout(pad=0.5)
+    st.pyplot(fig, width="content")
 
     return pred, float(proba[1])
 
@@ -118,25 +99,29 @@ def predict_and_plot(model, X, title):
 if st.button("🔍 Jalankan Prediksi"):
     st.write("---")
 
-    if mode == "Random Forest saja":
-        predict_and_plot(model_rf, X_input, "Random Forest")
+    pred_rf, p1_rf = predict_and_plot(model_rf, X_input, "Random Forest")
 
-    elif mode == "Gradient Boosting saja":
-        predict_and_plot(model_gbc, X_input, "Gradient Boosting")
+    # ---------------------------- Ringkasan ----------------------------
+    st.write("---")
+    st.subheader("🏁 Ringkasan Hasil Prediksi — Random Forest")
 
-    else:
-        colA, colB = st.columns(2)
-        with colA:
-            pred_rf, p1_rf = predict_and_plot(model_rf, X_input, "Random Forest")
-        with colB:
-            pred_gbc, p1_gbc = predict_and_plot(model_gbc, X_input, "Gradient Boosting")
+    c1, c2 = st.columns(2)
+    c1.metric("Prob(1) — Tsunami", f"{p1_rf:.3f}")
+    c2.metric("Prob(0) — Tidak", f"{1 - p1_rf:.3f}")
 
-        st.write("---")
-        st.subheader("🏁 Ringkasan Perbandingan (Input Ini)")
-        m1, m2, m3 = st.columns(3)
-        m1.metric("Prob(1) — RF", f"{p1_rf:.3f}")
-        m2.metric("Prob(1) — GBC", f"{p1_gbc:.3f}")
-        winner = "Random Forest" if p1_rf >= p1_gbc else "Gradient Boosting"
-        m3.metric("Model lebih yakin", winner)
+    st.markdown("**Nilai Fitur yang Dikirim ke Model:**")
+    st.dataframe(pd.DataFrame([X_input.iloc[0].to_dict()]), width="stretch")
 
-st.caption("Pastikan kedua file model .pkl berada di direktori yang sama dengan file ini. Urutan kolom input sudah disamakan dengan urutan training.")
+    # tampilkan fitur terpilih (opsional)
+    try:
+        if hasattr(model_rf, "named_steps") and "feat_select" in model_rf.named_steps:
+            selector = model_rf.named_steps["feat_select"]
+            if hasattr(selector, "get_support"):
+                mask = selector.get_support()
+                selected_feats = np.array(FEATURES_FULL)[mask]
+                st.markdown("**Fitur terpilih oleh selector dalam pipeline:**")
+                st.write(", ".join(selected_feats))
+    except Exception:
+        pass
+
+st.caption("Pastikan file model `.pkl` berada di folder `model/` dan urutan kolom input sesuai dengan urutan saat training.")

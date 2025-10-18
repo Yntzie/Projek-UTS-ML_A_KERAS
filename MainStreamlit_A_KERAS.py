@@ -38,6 +38,16 @@ DEFAULTS_FOR_MISSING = {
 
 # ---------------------------- Input Pengguna ----------------------------
 st.subheader("Masukkan Nilai Fitur (8 Fitur Terbaik)")
+st.markdown("""
+Keterangan fitur:
+- **CDI (Community Determined Intensity)** → Intensitas guncangan yang dirasakan masyarakat (0–12).  
+- **MMI (Modified Mercalli Intensity)** → Ukuran subjektif dampak gempa di permukaan (0–12).  
+- **SIG (Significance)** → Tingkat signifikansi kekuatan gempa (semakin besar → semakin kuat).  
+- **NST (Number of Stations)** → Jumlah stasiun seismik yang mendeteksi gempa.  
+- **DMIN (Distance Min)** → Jarak minimum antara stasiun pengukur dengan episentrum (km).  
+- **GAP (Azimuthal Gap)** → Distribusi arah pengukuran dari berbagai stasiun (0–360°).  
+- **Latitude & Longitude** → Titik koordinat pusat gempa.
+""")
 
 c1, c2 = st.columns(2)
 with c1:

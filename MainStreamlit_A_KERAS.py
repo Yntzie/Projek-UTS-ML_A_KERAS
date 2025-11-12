@@ -81,29 +81,20 @@ def predict_and_plot(model, X, title):
     pred = int(model.predict(X)[0])
 
     if hasattr(model, "predict_proba"):
-        proba = model.predict_proba(X)[0]
+        proba = model.predict_proba(X)[0][pred]  # ambil hanya probabilitas kelas yang diprediksi
     else:
-        proba = np.array([1 - pred, pred], dtype=float)
+        proba = float(pred)
 
-    # === Tampilkan hasil prediksi (success/error) ===
+    # === Tampilkan hasil prediksi ===
     if pred == 1:
         st.error(f"**{title} → Prediksi: TSUNAMI (1)**")
     else:
         st.success(f"**{title} → Prediksi: TIDAK (0)**")
 
-    # === Visualisasi probabilitas ===
-    dfp = pd.DataFrame({"Kelas": ["0 = Tidak", "1 = Tsunami"], "Prob": proba})
-    fig, ax = plt.subplots(figsize=(2.8, 1.8))
-    ax.bar(dfp["Kelas"], dfp["Prob"], color=["green", "red"], alpha=0.8)
-    ax.set_ylim(0, 1)
-    ax.set_ylabel("Prob", fontsize=8)
-    ax.set_title("Probabilitas", fontsize=9)
-    for i, v in enumerate(dfp["Prob"]):
-        ax.text(i, min(v + 0.03, 1.0), f"{v:.2%}", ha="center", fontsize=8)
-    plt.tight_layout(pad=0.5)
-    st.pyplot(fig, width="content")
+    # === Tampilkan probabilitas hanya untuk hasilnya ===
+    st.metric("Probabilitas", f"{proba:.3f}")
 
-    return pred, float(proba[1])
+    return pred, proba
 
 # ---------------------------- Eksekusi ----------------------------
 if st.button("🔍 Jalankan Prediksi"):
